@@ -1,0 +1,40 @@
+rules_version = '2';
+
+// Notes are private to the user who created them.
+// Field names match lib/services/cloud/cloud_storage_constants.dart.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // A note document as written by the app: only `user_id` and `text`.
+    function isValidNote(data) {
+      return data.keys().hasOnly(['user_id', 'text'])
+        && data.user_id is string
+        && data.text is string;
+    }
+
+    match /notes/{noteId} {
+      // Covers single-document gets and queries. Queries must filter on
+      // `user_id == request.auth.uid` or Firestore rejects them.
+      allow read: if signedIn() && resource.data.user_id == request.auth.uid;
+
+      // You can only create notes owned by yourself.
+      allow create: if signedIn()
+        && request.resource.data.user_id == request.auth.uid
+        && isValidNote(request.resource.data);
+
+      // Only the owner can edit, and they cannot hand the note to someone else.
+      allow update: if signedIn()
+        && resource.data.user_id == request.auth.uid
+        && request.resource.data.user_id == resource.data.user_id
+        && isValidNote(request.resource.data);
+
+      allow delete: if signedIn() && resource.data.user_id == request.auth.uid;
+    }
+
+    // Everything else is denied by default.
+  }
+}
